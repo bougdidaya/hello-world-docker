@@ -1,0 +1,50 @@
+
+name: CI-CD Hello World Docker
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate application
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Check required files
+        run: |
+          test -f app/index.html
+          test -f app/style.css
+          test -f app/script.js
+          test -f Dockerfile
+          echo "All required files are present."
+
+      - name: Validate JavaScript syntax
+        run: node --check app/script.js
+
+      - name: Check HTML references
+        run: |
+          grep -q 'style.css' app/index.html
+          grep -q 'script.js' app/index.html
+          echo "HTML references are valid."
+
+  docker-build:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t hello-world-app:${{ github.sha }} .
+
+      - name: Verify image exists
+        run: docker image inspect hello-world-app:${{ github.sha }}
