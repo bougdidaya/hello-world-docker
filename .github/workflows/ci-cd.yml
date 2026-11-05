@@ -1,7 +1,7 @@
 
 name: CI-CD Hello World Docker
 
-'on':
+on:
   push:
     branches:
       - main
@@ -26,14 +26,16 @@ jobs:
           test -f app/style.css
           test -f app/script.js
           test -f Dockerfile
+          echo "All required files are present."
 
       - name: Validate JavaScript syntax
         run: node --check app/script.js
 
-      - name: Check HTML references
+      - name: Validate HTML references
         run: |
           grep -q 'style.css' app/index.html
           grep -q 'script.js' app/index.html
+          echo "HTML references are valid."
 
   docker-build:
     name: Build and publish Docker image
@@ -63,10 +65,45 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build Docker image
+      - name: Build and publish Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: ${{ steps.meta.outputs.tags }}
+
+  deploy:
+    name: Deploy application to Ubuntu
+    runs-on: self-hosted
+    needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Log in to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          echo "$DOCKERHUB_TOKEN" | docker login \
+            --username "$DOCKERHUB_USERNAME" \
+            --password-stdin
+
+      - name: Pull latest Docker image
+        run: docker pull "${{ secrets.DOCKERHUB_USERNAME }}/hello-world-app:latest"
+
+      - name: Replace running container
+        run: |
+          docker rm -f hello-world-container || true
+          docker run -d \
+            --name hello-world-container \
+            --restart unless-stopped \
+            -p 8080:80 \
+            "${{ secrets.DOCKERHUB_USERNAME }}/hello-world-app:latest"
+
+      - name: Verify deployment
+        run: |
+          docker ps
+          curl --retry 5 --retry-delay 2 --retry-connrefused \
+            -f http://localhost:8080/
+
 
